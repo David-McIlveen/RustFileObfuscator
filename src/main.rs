@@ -4,8 +4,10 @@ use std::env;
 use std::path::Path;
 use std::io::prelude::*;
 use std::io::BufReader;
+use std::num::Wrapping;
 use std::fs::{File, OpenOptions};
 use std::str::FromStr;
+use rand::Rng;
 use sha2::{Sha256, Digest};
 
 fn main() {
@@ -13,7 +15,7 @@ fn main() {
     if args.len() >= 2 {
         let command = args[1].to_uppercase();
         match command.as_str() {
-            "CRV" => match attempt_to_create_valid_file(&args) {
+            "CVF" => match attempt_to_create_valid_file(&args) {
                 Ok(s) => println!("{}", s),
                 Err(e) => println!("{}", e)
             },
@@ -25,7 +27,18 @@ fn main() {
                 Ok(s) => println!("{}", s),
                 Err(e) => println!("{}", e)
             },
-            _ => println!("Command: \"{}\" does not exist.", command)
+            "ENC" => match attempt_to_encrypt_file(&args) {
+                Ok(s) => println!("{}", s),
+                Err(e) => println!("{}", e)
+            },
+            "DEC" => match attempt_to_dectrypt_file(&args) {
+                Ok(s) => println!("{}", s),
+                Err(e) => println!("{}", e)
+            },
+            "HELP" => {
+                println!("CVF - Create Validateable File\nRVF - Restore Validateable File\nVAL - Validate File\nENC - Create an Encrypted File\nDEC - Decrypt an Encrypted File\nVEN - Create a Validateable Encrypted File\nDEN - Decrypt a Validateable Encrypted File");
+            },
+            _ => println!("Command: \"{}\" does not exist.\nEnter HELP for a list of the commands.", command)
         }
     } else {
         println!("No command entered.");
@@ -128,6 +141,22 @@ fn attempt_to_validate_file(args:&Vec<String>)  -> Result<&str, &str>{
     }
 }
 
+fn attempt_to_encrypt_file(args:&Vec<String>) -> Result<&str, &str> {
+    match encrypt_file("temp1.txt", "temp1.enc", String::from("AAaa")) {
+        Ok(..) => return Ok("Encrypted file made."),
+        Err(..) => return Err("Could not encrypt file.")
+    }
+}
+
+fn attempt_to_dectrypt_file(args:&Vec<String>) -> Result<&str, &str> {
+    match dectyrpt_file("temp1.enc", "temp1.txt", String::from("AAaa")) {
+        Ok(..) => return Ok("Encrypted file made."),
+        Err(..) => return Err("Could not encrypt file.")
+    }
+}
+
+
+
 fn read_this_file(file_name:&str) -> io::Result<String>{
     let f = File::open(file_name)?;
     let mut reader = BufReader::new(f);
@@ -222,6 +251,87 @@ fn validate_file(file_name:&str) -> io::Result<bool> {
         is_valid = string_chars[i] as u8 == hash_bytes[i];
         i = i + 1;
     }
-    fs::remove_file(temp_file_name);
+    fs::remove_file(temp_file_name)?;
     Ok(is_valid)
+}
+
+fn encrypt_file(file_to_encrypt_name:&str, file_out_name:&str, password:String) -> io::Result<()>{
+    let mut rng = rand::thread_rng();
+    let key: u128 = rng.gen();
+    //println!("{:02x}", key);
+    let key_bytes = key.to_be_bytes();
+    //println!("{:#x?}", key_bytes);
+    let password_bytes = password.as_bytes();
+    //println!("{:#x?}", password_bytes);
+    let mut file_to_encypt = File::open(file_to_encrypt_name)?;
+    let mut file_out = File::create(file_out_name)?;
+    file_out.write(&key_bytes)?;
+    let mut data_buffer = [0; 4096];
+    let mut key_offset:usize = password.len() % key_bytes.len();
+    let mut pass_offset:usize = 0;
+    loop {
+        let bytes_read = file_to_encypt.read(&mut data_buffer)?;
+        if bytes_read == 0 {
+            break;
+        } else {
+            for i in 0..bytes_read{
+                if password_bytes.len() != 0 {
+                    let data_temp = Wrapping(data_buffer[i]) + Wrapping(password_bytes[pass_offset]);
+                    data_buffer[i] = data_temp.0;
+                    pass_offset += 1;
+                    if pass_offset >= password_bytes.len(){
+                        pass_offset = 0;
+                    }
+                }
+
+                let data_temp = Wrapping(data_buffer[i]) + Wrapping(key_bytes[key_offset]);
+                data_buffer[i] = data_temp.0;
+                key_offset += 1;
+                if key_offset >= key_bytes.len(){
+                    key_offset = 0;
+                }
+            }
+        }
+        file_out.write(&data_buffer[..bytes_read])?;
+    }
+    println!("REMEMBER: Save your password as you won't be able to get it back!");
+    Ok(())
+}
+
+fn dectyrpt_file(file_to_decrypt_name:&str, file_out_name:&str, password:String) -> io::Result<()> {
+    let mut file_to_decrypt = File::open(file_to_decrypt_name)?;
+    let mut key_bytes = [0; 16];
+    let password_bytes = password.as_bytes();
+    let mut data_buffer = [0; 4096];
+    let mut key_offset:usize = password.len() % key_bytes.len();
+    let mut pass_offset:usize = 0;
+    file_to_decrypt.read(&mut key_bytes)?;
+    let mut file_out = File::create(file_out_name)?;
+    loop {
+        let bytes_read = file_to_decrypt.read(&mut data_buffer)?;
+        if bytes_read == 0 {
+            break;
+        } else {
+            for i in 0..bytes_read{
+                if password_bytes.len() != 0 {
+                    let data_temp = Wrapping(data_buffer[i]) - Wrapping(password_bytes[pass_offset]);
+                    data_buffer[i] = data_temp.0;
+                    pass_offset += 1;
+                    if pass_offset >= password_bytes.len(){
+                        pass_offset = 0;
+                    }
+                }
+
+                let data_temp = Wrapping(data_buffer[i]) - Wrapping(key_bytes[key_offset]);
+                data_buffer[i] = data_temp.0;
+                key_offset += 1;
+                if key_offset >= key_bytes.len(){
+                    key_offset = 0;
+                }
+            }
+        }
+        file_out.write(&data_buffer[..bytes_read])?;
+    }
+    println!("REMEMBER: If you forgot your password or the file isn't coming out right, to bad - so sad.");
+    Ok(())
 }
