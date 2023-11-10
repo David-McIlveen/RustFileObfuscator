@@ -294,7 +294,7 @@ fn encrypt_file(file_to_encrypt_name:&str, file_out_name:&str, password:String) 
         }
         file_out.write(&data_buffer[..bytes_read])?;
     }
-    println!("REMEMBER: Save your password as you won't be able to get it back!");
+    println!("REMEMBER: Save your password as you won't be able to get it back Looser!");
     Ok(())
 }
 
