@@ -1,0 +1,3 @@
+C:\Users\mcilveend\RustProjects\rust_io_test\src\cool.txt
+C:\Users\mcilveend\RustProjects\rust_io_test\src\main.rs
+C:\Users\mcilveend\RustProjects\rust_io_test\src\test.txt
