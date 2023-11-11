@@ -3,7 +3,8 @@ use std::io;
 use std::env;
 use std::path::Path;
 use std::io::prelude::*;
-use std::io::BufReader;
+use std::io::{Write};
+use scanner_rust::ScannerAscii;
 use std::num::Wrapping;
 use std::fs::{File, OpenOptions};
 use std::str::FromStr;
@@ -36,7 +37,7 @@ fn main() {
                 Err(e) => println!("{}", e)
             },
             "HELP" => {
-                println!("CVF - Create Validateable File\nRVF - Restore Validateable File\nVAL - Validate File\nENC - Create an Encrypted File\nDEC - Decrypt an Encrypted File\nVEN - Create a Validateable Encrypted File\nDEN - Decrypt a Validateable Encrypted File");
+                println!("CVF - Create Validateable File\nRVF - Restore Validateable File\nVAL - Validate File\nENC - Create an Encrypted File\nDEC - Decrypt an Encrypted File");
             },
             _ => println!("Command: \"{}\" does not exist.\nEnter HELP for a list of the commands.", command)
         }
@@ -70,26 +71,53 @@ fn main() {
     // }
 }
 
-fn attempt_to_create_valid_file(args:&Vec<String>) -> Result<&str, &str>{
-    if args.len() >= 3 {
-        let file_to_enter = args[2].clone();
-        let file_to_save = {
-            if args.len() > 4 {
-                args[3].clone()
+struct FileData{
+    file_old:String,
+    file_new:String,
+    password:String
+}
+
+fn get_file_data<'a>(args:&'a Vec<String>, password_msg:&str, file_extension:&'a str) -> Result<FileData, &'a str> {
+    if args.len() < 3 {
+        return Err("No file entered.")
+    }
+    let mut temp_file_data:FileData = FileData {
+        file_old: String::from(""),
+        file_new: String::from(""),
+        password: String::from("")
+    };
+    temp_file_data.file_old = args[2].clone();
+    temp_file_data.file_new = {
+        if args.len() >= 4 {
+            args[3].clone()
+        } else {
+            let mut temp_name: String = temp_file_data.file_old.clone();
+            remove_file_extension(&mut temp_name);
+            if file_extension.len() != 0 {
+                temp_name.push_str(file_extension);
             } else {
-                let mut file_temp = file_to_enter.clone();
-                remove_file_extension(&mut file_temp);
-                file_temp.push_str(".enc");
-                file_temp
+                temp_name.push_str(".temp");
+                println!("- WARNING: No file to write to specified, a defualt template will be used.\n- You will need to rename the file with the proper extension!");
+            }
+            temp_name
+        }
+    };
+    if password_msg.len() != 0 {
+        print!("{}", password_msg);
+        io::stdout().flush().unwrap();
+        temp_file_data.password = {
+            let mut sc = ScannerAscii::new(io::stdin());
+            match sc.next_line() {
+                Ok(s) => match s {
+                    Some(v) => v,
+                    None => String::from("")
+                }
+                Err(..) => String::from("")
             }
         };
-        match create_valid_file(&file_to_enter, &file_to_save) {
-            Ok(..) => return Ok("Validatable file created."),
-            Err(..) => return Err("Could not create validatable file.")
-        }
-    } else {
-        return Err("No file entered.");
+        println!("The password you entered was \"{}\"", temp_file_data.password);
     }
+    Ok(temp_file_data)
 }
 
 fn remove_file_extension(file_name:&mut String){
@@ -99,72 +127,72 @@ fn remove_file_extension(file_name:&mut String){
     }
 }
 
+fn attempt_to_create_valid_file(args:&Vec<String>) -> Result<&str, &str>{
+    let file_data:FileData = match get_file_data(args, "", ".ver"){
+        Ok(v) => v,
+        Err(s) => return Err(s)
+    };
+    match create_valid_file(file_data.file_old.as_str(), file_data.file_new.as_str()) {
+        Ok(..) => return Ok("Validatable file created."),
+        Err(..) => return Err("Could not create validatable file.")
+    }
+}
+
 fn attempt_to_restore_valid_file(args:&Vec<String>) -> Result<&str, &str> {
-    if args.len() >= 3 {
-        let file_to_unvalidate = args[2].clone();
-        match validate_file(&file_to_unvalidate.as_str()) {
-            Ok(..) => (),
-            Err(..) => println!("WARNING! File being restored is not valid!")
-        }
-        let file_to_save_to = {
-            if args.len() >= 4  {
-                args[3].clone()
-            } else {
-                let mut temp_name: String = file_to_unvalidate.clone();
-                remove_file_extension(&mut temp_name);
-                temp_name.push_str(".temp");
-                println!("- WARNING! No file to write to specified, a defualt template will be used.\n- You will need to rename the file with the proper extension!");
-                temp_name
-            }
-        };
-        match restore_valid_file(&file_to_unvalidate.as_str(), &file_to_save_to.as_str()) {
-            Ok(..) => return Ok("Hashing data removed from file."),
-            Err(..) => return Err("Hashing data could not be removed.")
-        }
-    } else {
-        return Err("No file entered.");
+    let file_data:FileData = match get_file_data(args, "", ".ver"){
+        Ok(v) => v,
+        Err(s) => return Err(s)
+    };
+    match restore_valid_file(file_data.file_old.as_str(), file_data.file_new.as_str()) {
+        Ok(..) => return Ok("Hashing data removed from file."),
+        Err(..) => return Err("Hashing data could not be removed.")
     }
 }
 
 fn attempt_to_validate_file(args:&Vec<String>)  -> Result<&str, &str>{
-    if args.len() >= 3 {
-        match validate_file(args[2].as_str()) {
-            Ok(s) => if s {
-                return Ok("File was valid.");
-            } else {
-                return Ok("File was invalid.");
-            },
-            Err(..) => return Err("Could not validate file.")
-        }
-    } else {
-        return Err("No file entered.");
+    let file_data:FileData = match get_file_data(args, "", ".nothing"){
+        Ok(v) => v,
+        Err(s) => return Err(s)
+    };
+    match validate_file(file_data.file_old.as_str()) {
+        Ok(s) => if s {
+            return Ok("File was valid.");
+        } else {
+            return Ok("File was invalid.");
+        },
+        Err(..) => return Err("Could not validate file.")
     }
 }
 
 fn attempt_to_encrypt_file(args:&Vec<String>) -> Result<&str, &str> {
-    match encrypt_file("temp1.txt", "temp1.enc", String::from("AAaa")) {
+    let file_data:FileData = match get_file_data(args, "Please enter a password if desired or enter for none: ", ".enc"){
+        Ok(v) => v,
+        Err(s) => return Err(s)
+    };
+    if file_data.file_old == file_data.file_new {
+        return Err("Files cannot be the same name.");
+    }
+    match encrypt_file(file_data.file_old.as_str(), file_data.file_new.as_str(), file_data.password.clone()) {
         Ok(..) => return Ok("Encrypted file made."),
         Err(..) => return Err("Could not encrypt file.")
     }
 }
 
 fn attempt_to_dectrypt_file(args:&Vec<String>) -> Result<&str, &str> {
-    match dectyrpt_file("temp1.enc", "temp1.txt", String::from("AAaa")) {
-        Ok(..) => return Ok("Encrypted file made."),
+    let file_data:FileData = match get_file_data(args, "Please enter password, if applicable or hit enter for none: ", ""){
+        Ok(s) => s,
+        Err(v) => return Err(v)
+    };
+    if file_data.file_old == file_data.file_new {
+        return Err("Files cannot be the same name.");
+    }
+    match dectyrpt_file(file_data.file_old.as_str(), file_data.file_new.as_str(), file_data.password.clone()) {
+        Ok(..) => return Ok("Dectypted File."),
         Err(..) => return Err("Could not encrypt file.")
     }
 }
 
-
-
-fn read_this_file(file_name:&str) -> io::Result<String>{
-    let f = File::open(file_name)?;
-    let mut reader = BufReader::new(f);
-    let mut buffer = String::new();
-
-    reader.read_line(&mut buffer)?;
-    Ok(buffer)
-}
+//File I/O Handling...
 
 fn read_first_bytes<const LEN: usize>(file_name:&str) -> io::Result<[u8; LEN]>{
     let mut f = File::open(file_name)?;
@@ -256,6 +284,9 @@ fn validate_file(file_name:&str) -> io::Result<bool> {
 }
 
 fn encrypt_file(file_to_encrypt_name:&str, file_out_name:&str, password:String) -> io::Result<()>{
+    println!("{}", &file_to_encrypt_name);
+    println!("{}", &file_out_name);
+    println!("{}", &password);
     let mut rng = rand::thread_rng();
     let key: u128 = rng.gen();
     //println!("{:02x}", key);
@@ -299,6 +330,9 @@ fn encrypt_file(file_to_encrypt_name:&str, file_out_name:&str, password:String) 
 }
 
 fn dectyrpt_file(file_to_decrypt_name:&str, file_out_name:&str, password:String) -> io::Result<()> {
+    println!("{}", &file_to_decrypt_name);
+    println!("{}", &file_out_name);
+    println!("{}", &password);
     let mut file_to_decrypt = File::open(file_to_decrypt_name)?;
     let mut key_bytes = [0; 16];
     let password_bytes = password.as_bytes();
