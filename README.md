@@ -1,1 +1,1 @@
-# A great rust project! :D
+# A Great Rust Project! :D
